@@ -17,6 +17,11 @@ import (
 	"github.com/cenron/neil-bot-go/pkg/util"
 )
 
+const (
+	LIKE_REACTION    = "👍"
+	DISLIKE_REACTION = "👎"
+)
+
 var MimeToExt = map[string]string{
 	"image/png":  ".png",
 	"image/bmp":  ".bmp",
@@ -82,12 +87,12 @@ func NewBootyCommand(e *event.EventManager) *BootyCommand {
 	// Register our event handlers
 	e.Register(event.ADD_REACTION, func(msg interface{}) {
 		if msgreaction, ok := msg.(event.MessageReactionInteraction); ok {
-			handleAddReaction(&msgreaction)
+			handleReaction(&msgreaction, false)
 		}
 	})
 	e.Register(event.REMOVE_REACTION, func(msg interface{}) {
 		if msgreaction, ok := msg.(event.MessageReactionInteraction); ok {
-			handleRemoveReaction(&msgreaction)
+			handleReaction(&msgreaction, true)
 		}
 	})
 
@@ -133,12 +138,18 @@ func (bc *BootyCommand) Run(s *discordgo.Session, m *discordgo.MessageCreate) er
 	return nil
 }
 
-func handleAddReaction(msg *event.MessageReactionInteraction) {
-	fmt.Printf("Add reaction: %+v\n", msg)
-}
+func handleReaction(msg *event.MessageReactionInteraction, removed bool) {
+	if msg.Name != "👍" && msg.Name != "👎" {
+		return
+	}
 
-func handleRemoveReaction(msg *event.MessageReactionInteraction) {
+	if !removed {
+		fmt.Printf("Add reaction: %+v\n", msg)
+		return
+	}
+
 	fmt.Printf("Removed reaction: %+v\n", msg)
+
 }
 
 func (bc *BootyCommand) createEmbed(f *os.File, color int) (*discordgo.MessageSend, error) {

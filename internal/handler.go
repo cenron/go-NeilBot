@@ -72,8 +72,9 @@ func handleAddReaction(s *discordgo.Session, r *discordgo.MessageReactionAdd) {
 		GuildID:   r.MessageReaction.GuildID,
 	}
 
-	EventManager.Emit(event.ADD_REACTION, msgreaction)
-
+	done := make(chan struct{})
+	EventManager.Emit(event.ADD_REACTION, msgreaction, done)
+	<-done
 }
 
 func handleRemoveReaction(s *discordgo.Session, r *discordgo.MessageReactionRemove) {
@@ -93,6 +94,8 @@ func handleRemoveReaction(s *discordgo.Session, r *discordgo.MessageReactionRemo
 		GuildID:   r.MessageReaction.GuildID,
 	}
 
-	EventManager.Emit(event.REMOVE_REACTION, msgreaction)
+	done := make(chan struct{})
+	EventManager.Emit(event.REMOVE_REACTION, msgreaction, done)
+	<-done
 
 }
