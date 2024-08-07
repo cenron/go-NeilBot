@@ -80,8 +80,16 @@ func NewBootyCommand(e *event.EventManager) *BootyCommand {
 	}
 
 	// Register our event handlers
-	e.Register(event.ADD_REACTION, handleAddReaction)
-	e.Register(event.REMOVE_REACTION, handleRemoveReaction)
+	e.Register(event.ADD_REACTION, func(msg interface{}) {
+		if msgreaction, ok := msg.(event.MessageReactionInteraction); ok {
+			handleAddReaction(&msgreaction)
+		}
+	})
+	e.Register(event.REMOVE_REACTION, func(msg interface{}) {
+		if msgreaction, ok := msg.(event.MessageReactionInteraction); ok {
+			handleRemoveReaction(&msgreaction)
+		}
+	})
 
 	return &BootyCommand{
 		MimeToExt:    MimeToExt,
@@ -125,12 +133,12 @@ func (bc *BootyCommand) Run(s *discordgo.Session, m *discordgo.MessageCreate) er
 	return nil
 }
 
-func handleAddReaction(msg interface{}) {
-	fmt.Printf("Got reaction: %s\n", msg)
+func handleAddReaction(msg *event.MessageReactionInteraction) {
+	fmt.Printf("Add reaction: %+v\n", msg)
 }
 
-func handleRemoveReaction(msg interface{}) {
-	fmt.Printf("Removed reaction: %s\n", msg)
+func handleRemoveReaction(msg *event.MessageReactionInteraction) {
+	fmt.Printf("Removed reaction: %+v\n", msg)
 }
 
 func (bc *BootyCommand) createEmbed(f *os.File, color int) (*discordgo.MessageSend, error) {

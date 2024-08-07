@@ -3,7 +3,6 @@ package internal
 import (
 	"crypto/md5"
 	"encoding/hex"
-	"log"
 	"strings"
 
 	"github.com/bwmarrin/discordgo"
@@ -12,6 +11,7 @@ import (
 )
 
 var EventManager *event.EventManager = event.NewEventManager()
+var Hasher = md5.New()
 
 type CommandInterface interface {
 	Run(s *discordgo.Session, m *discordgo.MessageCreate) error
@@ -60,11 +60,19 @@ func handleAddReaction(s *discordgo.Session, r *discordgo.MessageReactionAdd) {
 		return
 	}
 
-	hasher := md5.New()
-	hasher.Write([]byte(r.Emoji.Name))
-	log.Printf("Got reaction: msg: %s - emoji: %s", r.MessageID, hex.EncodeToString(hasher.Sum(nil)))
+	Hasher.Reset()
+	Hasher.Write([]byte(r.MessageReaction.Emoji.Name))
 
-	EventManager.Emit(event.ADD_REACTION, hex.EncodeToString(hasher.Sum(nil)))
+	msgreaction := event.MessageReactionInteraction{
+		Hash:      hex.EncodeToString(Hasher.Sum(nil)),
+		Name:      r.MessageReaction.Emoji.Name,
+		UserID:    r.MessageReaction.UserID,
+		MessageID: r.MessageReaction.MessageID,
+		ChannelID: r.MessageReaction.ChannelID,
+		GuildID:   r.MessageReaction.GuildID,
+	}
+
+	EventManager.Emit(event.ADD_REACTION, msgreaction)
 
 }
 
@@ -73,10 +81,18 @@ func handleRemoveReaction(s *discordgo.Session, r *discordgo.MessageReactionRemo
 		return
 	}
 
-	hasher := md5.New()
-	hasher.Write([]byte(r.Emoji.Name))
-	log.Printf("Reaction removed: msg: %s - emoji: %s", r.MessageID, hex.EncodeToString(hasher.Sum(nil)))
+	Hasher.Reset()
+	Hasher.Write([]byte(r.MessageReaction.Emoji.Name))
 
-	EventManager.Emit(event.REMOVE_REACTION, hex.EncodeToString(hasher.Sum(nil)))
+	msgreaction := event.MessageReactionInteraction{
+		Hash:      hex.EncodeToString(Hasher.Sum(nil)),
+		Name:      r.MessageReaction.Emoji.Name,
+		UserID:    r.MessageReaction.UserID,
+		MessageID: r.MessageReaction.MessageID,
+		ChannelID: r.MessageReaction.ChannelID,
+		GuildID:   r.MessageReaction.GuildID,
+	}
+
+	EventManager.Emit(event.REMOVE_REACTION, msgreaction)
 
 }

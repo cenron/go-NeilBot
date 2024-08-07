@@ -34,8 +34,8 @@ assets/**/*.jpeg
 assets/**/*.gif
 assets/**/*.svg
 
-!tmp/
-tmp/.gitkeep
+tmp/**
+!tmp/.gitkeep
 
 # Ignore .env files
 .env
