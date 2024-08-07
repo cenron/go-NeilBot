@@ -37,6 +37,8 @@ assets/**/*.svg
 tmp/**
 !tmp/.gitkeep
 
+assets/storage.db
+
 # Ignore .env files
 .env
 .env.local

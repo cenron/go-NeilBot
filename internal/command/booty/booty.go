@@ -132,14 +132,14 @@ func (bc *BootyCommand) Run(s *discordgo.Session, m *discordgo.MessageCreate) er
 		return errors.New("could not send message")
 	}
 
-	s.MessageReactionAdd(m.ChannelID, msg.ID, "👍")
-	s.MessageReactionAdd(m.ChannelID, msg.ID, "👎")
+	s.MessageReactionAdd(m.ChannelID, msg.ID, LIKE_REACTION)
+	s.MessageReactionAdd(m.ChannelID, msg.ID, DISLIKE_REACTION)
 
 	return nil
 }
 
 func handleReaction(msg *event.MessageReactionInteraction, removed bool) {
-	if msg.Name != "👍" && msg.Name != "👎" {
+	if msg.Name != LIKE_REACTION && msg.Name != DISLIKE_REACTION {
 		return
 	}
 
