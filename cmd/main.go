@@ -8,17 +8,25 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/cenron/neil-bot-go/internal"
-	"github.com/cenron/neil-bot-go/pkg/db"
+	"github.com/cenron/neil-bot-go/pkg/storage"
 	"github.com/cenron/neil-bot-go/pkg/util"
+	"github.com/jmoiron/sqlx"
 )
 
 func main() {
 
 	util.LoadEnv()
 
-	storage := db.NewStorage(fmt.Sprintf("%s/%s", os.Getenv("ASSETS_FOLDER"), os.Getenv("DB_FILE")))
-	// Used for testing DELETE
-	db.CreateTable(storage.DB)
+	db := storage.NewDB(fmt.Sprintf("%s/%s", os.Getenv("ASSETS_FOLDER"), os.Getenv("DB_FILE")))
+	defer func(db *sqlx.DB) {
+		err := db.Close()
+		if err != nil {
+			os.Exit(1)
+		}
+	}(db)
+
+	storage.RunMigration(db)
+	store := storage.NewStorage(db)
 
 	sess, err := discordgo.New(fmt.Sprintf("Bot %s", os.Getenv("DISCORD_KEY")))
 	if err != nil {
@@ -26,7 +34,7 @@ func main() {
 	}
 
 	// Initialize our handlers
-	internal.InitHandlers(sess)
+	internal.InitHandlers(sess, store)
 
 	sess.Identify.Intents = discordgo.IntentsAllWithoutPrivileged
 	err = sess.Open()

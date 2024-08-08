@@ -8,6 +8,7 @@ import (
 	"github.com/bwmarrin/discordgo"
 	"github.com/cenron/neil-bot-go/internal/command/booty"
 	"github.com/cenron/neil-bot-go/pkg/event"
+	"github.com/cenron/neil-bot-go/pkg/storage"
 )
 
 var EventManager *event.EventManager = event.NewEventManager()
@@ -17,12 +18,13 @@ type CommandInterface interface {
 	Run(s *discordgo.Session, m *discordgo.MessageCreate) error
 }
 
-// Our list of commands we support.
-var CommandMap = map[string]CommandInterface{
-	"booty": booty.NewBootyCommand(EventManager),
-}
+// CommandMap Our list of commands we support.
+var CommandMap = make(map[string]CommandInterface)
 
-func InitHandlers(s *discordgo.Session) {
+func InitHandlers(s *discordgo.Session, store *storage.Storage) {
+
+	// set up our commands
+	CommandMap["booty"] = booty.NewBootyCommand(EventManager, store)
 
 	s.AddHandler(handleMessageCreate)
 
@@ -65,11 +67,11 @@ func handleAddReaction(s *discordgo.Session, r *discordgo.MessageReactionAdd) {
 
 	msgreaction := event.MessageReactionInteraction{
 		Hash:      hex.EncodeToString(Hasher.Sum(nil)),
-		Name:      r.MessageReaction.Emoji.Name,
-		UserID:    r.MessageReaction.UserID,
-		MessageID: r.MessageReaction.MessageID,
-		ChannelID: r.MessageReaction.ChannelID,
-		GuildID:   r.MessageReaction.GuildID,
+		Name:      r.Emoji.Name,
+		UserID:    r.UserID,
+		MessageID: r.MessageID,
+		ChannelID: r.ChannelID,
+		GuildID:   r.GuildID,
 	}
 
 	done := make(chan struct{})
@@ -87,11 +89,11 @@ func handleRemoveReaction(s *discordgo.Session, r *discordgo.MessageReactionRemo
 
 	msgreaction := event.MessageReactionInteraction{
 		Hash:      hex.EncodeToString(Hasher.Sum(nil)),
-		Name:      r.MessageReaction.Emoji.Name,
-		UserID:    r.MessageReaction.UserID,
-		MessageID: r.MessageReaction.MessageID,
-		ChannelID: r.MessageReaction.ChannelID,
-		GuildID:   r.MessageReaction.GuildID,
+		Name:      r.Emoji.Name,
+		UserID:    r.UserID,
+		MessageID: r.MessageID,
+		ChannelID: r.ChannelID,
+		GuildID:   r.GuildID,
 	}
 
 	done := make(chan struct{})
