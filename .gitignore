@@ -19,10 +19,6 @@
 # Go coverage profile
 *.coverprofile
 
-# Go module dependencies
-/go.sum
-/go.mod
-
 # IDE-specific files
 .idea/
 .vscode/

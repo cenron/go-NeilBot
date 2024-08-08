@@ -30,7 +30,7 @@ func (s *Storage) SaveBootyImage(name, mimeType, hash string) (int64, error) {
 // AddBootyLike add a like to the booty message
 func (s *Storage) AddBootyLike(messageID string) (int64, error) {
 	// Need to get the image_id from the booty_message, then update the booty_image
-	
+
 	query := "UPDATE booty_message SET likes = likes + 1 WHERE message_id = ?;"
 	r, err := s.DB.Exec(query, messageID)
 	if err != nil {
