@@ -32,6 +32,14 @@ var MimeToExt = map[string]string{
 	"image/webp": ".webp",
 }
 
+var RarityDistribution = map[string]float64{
+	"Legendary": 0.01,
+	"Epic":      0.03,
+	"Rare":      0.06,
+	"Uncommon":  0.20,
+	"Common":    0.80,
+}
+
 var RarityTypes = map[string]Rarity{
 	"common": {
 		Name:  "Common",
@@ -65,6 +73,11 @@ type Rarity struct {
 	Value int
 }
 
+type Image struct {
+	FileName string
+	Rarity   Rarity
+}
+
 type BootyCommand struct {
 	MimeToExt    map[string]string
 	BootyFolder  string
@@ -77,11 +90,11 @@ func NewBootyCommand(e *event.EventManager, store *storage.Storage) *BootyComman
 
 	util.LoadEnv()
 
-	bootyfolder := fmt.Sprintf("%s/%s", os.Getenv("ASSETS_FOLDER"), "booty")
+	bootyFolder := fmt.Sprintf("%s/%s", os.Getenv("ASSETS_FOLDER"), "booty")
 
 	// Make sure that the booty folder exists.
-	if !util.DirExists(bootyfolder) {
-		err := os.Mkdir(bootyfolder, 0777)
+	if !util.DirExists(bootyFolder) {
+		err := os.Mkdir(bootyFolder, 0777)
 		if err != nil && !os.IsExist(err) {
 			log.Fatal(err)
 		}
@@ -102,7 +115,7 @@ func NewBootyCommand(e *event.EventManager, store *storage.Storage) *BootyComman
 	return &BootyCommand{
 		MimeToExt:    MimeToExt,
 		RarityTypes:  RarityTypes,
-		BootyFolder:  bootyfolder,
+		BootyFolder:  bootyFolder,
 		EventManager: e,
 		Store:        store,
 	}
@@ -111,13 +124,13 @@ func NewBootyCommand(e *event.EventManager, store *storage.Storage) *BootyComman
 func (bc *BootyCommand) Run(s *discordgo.Session, m *discordgo.MessageCreate) error {
 
 	// Upload the file to Discord
-	randfile, err := bc.getRandomFile()
+	randFile, err := bc.getRandomFile()
 	if err != nil {
 		slog.Error("could not find files: %v", util.ErrAttr(err))
 		return errors.New("could not find files")
 	}
 
-	embed, msg, err := bc.sendMessage(s, randfile, m.ChannelID)
+	embed, msg, err := bc.sendMessage(s, randFile, m.ChannelID)
 	if err != nil {
 		slog.Error("could send message: %v", util.ErrAttr(err))
 		return errors.New("could send message")
@@ -128,10 +141,17 @@ func (bc *BootyCommand) Run(s *discordgo.Session, m *discordgo.MessageCreate) er
 		return err
 	}
 
-	imageID, err := bc.Store.SaveBootyImage(randfile, embed.File.ContentType, embed.File.Name[:strings.Index(embed.File.Name, ".")])
+	hash := embed.File.Name[:strings.Index(embed.File.Name, ".")]
+	imageID, err := bc.Store.GetBootyImageId(hash)
 	if err != nil {
-		slog.Error("could not save booty image: %v", util.ErrAttr(err))
-		return errors.New("could not save booty image")
+		imageID, err = bc.Store.SaveBootyImage(randFile.FileName, randFile.Rarity.Name, embed.File.ContentType, hash)
+		if err != nil {
+			slog.Error("could not save booty image: %v", util.ErrAttr(err))
+			return errors.New("could not save booty image")
+		}
+	} else {
+		bc.Store.IncrementPostCount(imageID)
+		bc.Store.UpdateRarity(imageID, randFile.Rarity.Name)
 	}
 
 	_, err = bc.Store.SaveBootyMessage(msg.ID, msg.ChannelID, m.GuildID, imageID)
@@ -142,50 +162,104 @@ func (bc *BootyCommand) Run(s *discordgo.Session, m *discordgo.MessageCreate) er
 	return nil
 }
 
+// CalculateRarity determines the rarity level of an image based on its popularity.
+func (bc *BootyCommand) calculateRarity(currentDistribution map[string]int, totalImages int, fileName string) Rarity {
+
+	h := md5.New()
+	h.Write([]byte(fileName))
+	hash := hex.EncodeToString(h.Sum(nil))
+
+	image, err := bc.Store.GetBootyImage(hash)
+	if err != nil {
+		return bc.RarityTypes["common"]
+	}
+	if image.PostCount == 0 {
+		return bc.RarityTypes["common"]
+	}
+
+	ratio := float64(image.Likes) / float64(image.Dislikes+1)
+	score := ratio / float64(image.PostCount)
+
+	switch {
+	case score >= 0.99:
+		return bc.RarityTypes["legendary"]
+	case score >= 0.97:
+		return bc.RarityTypes["epic"]
+	case score >= 0.94:
+		return bc.RarityTypes["rare"]
+	case score >= 0.80:
+		return bc.RarityTypes["uncommon"]
+	default:
+		return bc.RarityTypes["common"]
+	}
+}
+
 func handleReaction(msg *event.MessageReactionInteraction, s *storage.Storage, removed bool) {
 	if msg.Name != LikeReaction && msg.Name != DislikeReaction {
 		return
 	}
 
-	if !removed {
-		fmt.Printf("Add reaction: %+v\n", msg)
-		_, err := s.AddBootyLike(msg.MessageID)
+	if msg.Name == LikeReaction {
+		if !removed {
+			_, err := s.AddBootyLike(msg.MessageID)
+			if err != nil {
+				return
+			}
+			return
+		}
+
+		_, err := s.RemoveBootyLike(msg.MessageID)
 		if err != nil {
 			return
 		}
-		return
 	}
 
-	fmt.Printf("Removed reaction: %+v\n", msg)
+	if msg.Name == DislikeReaction {
+		if !removed {
+			_, err := s.AddBootyDislike(msg.MessageID)
+			if err != nil {
+				return
+			}
+			return
+		}
 
+		_, err := s.RemoveBootyDislike(msg.MessageID)
+		if err != nil {
+			return
+		}
+	}
 }
 
-func (bc *BootyCommand) createEmbed(f *os.File, color int) (*discordgo.MessageSend, error) {
+func (bc *BootyCommand) createEmbed(f *os.File, rarity Rarity) (*discordgo.MessageSend, error) {
 
-	mimietype, err := bc.getMimeType(f.Name())
+	mimeType, err := bc.getMimeType(f.Name())
 	if err != nil {
 		return nil, err
 	}
 
-	hasher := md5.New()
-	hasher.Write([]byte(f.Name()))
-	hash := fmt.Sprintf("%s%s", hex.EncodeToString(hasher.Sum(nil)), mimietype.Ext)
+	h := md5.New()
+	h.Write([]byte(f.Name()))
+	hash := fmt.Sprintf("%s%s", hex.EncodeToString(h.Sum(nil)), mimeType.Ext)
 
 	embed := &discordgo.MessageEmbed{
-		Author: &discordgo.MessageEmbedAuthor{},
-		Color:  color,
+		Title:       fmt.Sprintf("Rarity: %s", rarity.Name),
+		Description: "Click image to enlarge.",
+		Author:      &discordgo.MessageEmbedAuthor{},
+		Color:       rarity.Value,
 		Image: &discordgo.MessageEmbedImage{
 			URL: fmt.Sprintf("attachment://%s", hash),
 		},
 		Timestamp: time.Now().Format(time.RFC3339),
-		Footer:    &discordgo.MessageEmbedFooter{},
+		Footer: &discordgo.MessageEmbedFooter{
+			Text: fmt.Sprintf("Vote by clicking the %s or %s icons", LikeReaction, DislikeReaction),
+		},
 	}
 
 	msg := discordgo.MessageSend{
 		Embed: embed,
 		File: &discordgo.File{
 			Name:        hash,
-			ContentType: mimietype.Type,
+			ContentType: mimeType.Type,
 			Reader:      f,
 		},
 	}
@@ -211,20 +285,41 @@ func (bc *BootyCommand) getMimeType(filepath string) (mt *MimeType, err error) {
 	}, nil
 }
 
-func (bc *BootyCommand) getRandomFile() (string, error) {
-	bootyfiles, err := os.ReadDir(bc.BootyFolder)
+func (bc *BootyCommand) getRandomFile() (*Image, error) {
+	bootyFiles, err := os.ReadDir(bc.BootyFolder)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	var filelist []string
-	for _, file := range bootyfiles {
+	totalImages := len(bootyFiles)
+	currentDistribution := map[string]int{
+		"Legendary": 0,
+		"Epic":      0,
+		"Rare":      0,
+		"Uncommon":  0,
+		"Common":    0,
+	}
+
+	var fileList []Image
+	for _, file := range bootyFiles {
 		if !file.IsDir() {
-			filelist = append(filelist, file.Name())
+
+			filepath := fmt.Sprintf("%s/%s", bc.BootyFolder, file.Name())
+			v, err := bc.getMimeType(filepath)
+			if err != nil {
+				continue
+			}
+
+			if v.Ext == "" {
+				continue
+			}
+
+			rarity := bc.calculateRarity(currentDistribution, totalImages, filepath)
+			fileList = append(fileList, Image{FileName: file.Name(), Rarity: rarity})
 		}
 	}
 
-	return filelist[rand.Intn(len(filelist))], nil
+	return &fileList[rand.Intn(len(fileList))], nil
 }
 
 func (bc *BootyCommand) addReaction(s *discordgo.Session, channelID, messageID string) error {
@@ -242,15 +337,15 @@ func (bc *BootyCommand) addReaction(s *discordgo.Session, channelID, messageID s
 	return nil
 }
 
-func (bc *BootyCommand) sendMessage(s *discordgo.Session, file string, channelID string) (*discordgo.MessageSend, *discordgo.Message, error) {
-	f, err := os.Open(fmt.Sprintf("%s/%s", bc.BootyFolder, file))
+func (bc *BootyCommand) sendMessage(s *discordgo.Session, image *Image, channelID string) (*discordgo.MessageSend, *discordgo.Message, error) {
+	f, err := os.Open(fmt.Sprintf("%s/%s", bc.BootyFolder, image.FileName))
 	if err != nil {
 		slog.Error("could not open file", util.ErrAttr(err))
 		return nil, nil, errors.New("could not open file")
 	}
 	defer f.Close()
 
-	embed, err := bc.createEmbed(f, RarityTypes["common"].Value)
+	embed, err := bc.createEmbed(f, image.Rarity)
 	if err != nil {
 		slog.Error("could not create embed: %v", util.ErrAttr(err))
 		return nil, nil, errors.New("could not create embed")

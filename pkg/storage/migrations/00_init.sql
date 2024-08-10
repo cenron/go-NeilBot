@@ -2,9 +2,11 @@ CREATE TABLE booty_image (
     id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
     name VARCHAR(255) NOT NULL,
     mime_type VARCHAR(255) NOT NULL,
-    hash VARCHAR(255),
+    hash VARCHAR(255) UNIQUE,
     likes INTEGER NOT NULL DEFAULT 0,
     dislikes INTEGER NOT NULL DEFAULT 0,
+    post_count INTEGER NOT NULL DEFAULT 0,
+    rarity VARCHAR(100),
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL
 );
