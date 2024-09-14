@@ -127,7 +127,7 @@ func (s *Storage) GetBootyImageId(hash string) (int64, error) {
 
 func (s *Storage) GetBootyImage(hash string) (*BootyImageEntity, error) {
 	query := "SELECT * FROM booty_image WHERE hash =?;"
-	var bie BootyImageEntity = BootyImageEntity{}
+	var bie = BootyImageEntity{}
 	err := s.DB.QueryRowx(query, hash).StructScan(&bie)
 	if err != nil {
 		log.Printf("Error getting image by hash: %v", err)

@@ -7,7 +7,6 @@ import (
 	"os/signal"
 
 	"github.com/bwmarrin/discordgo"
-	"github.com/cenron/neil-bot-go/internal"
 	"github.com/cenron/neil-bot-go/pkg/storage"
 	"github.com/cenron/neil-bot-go/pkg/util"
 	"github.com/jmoiron/sqlx"
@@ -33,8 +32,9 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Initialize our handlers
-	internal.InitHandlers(sess, store)
+	sess.State.
+		// Initialize our handlers
+		internal.InitHandlers(sess, store)
 
 	sess.Identify.Intents = discordgo.IntentsAllWithoutPrivileged
 	err = sess.Open()

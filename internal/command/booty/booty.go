@@ -5,9 +5,9 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/mroth/weightedrand"
 	"log"
 	"log/slog"
-	"math/rand"
 	"net/http"
 	"os"
 	"strings"
@@ -30,14 +30,6 @@ var MimeToExt = map[string]string{
 	"image/gif":  ".gif",
 	"image/jpeg": ".jpeg",
 	"image/webp": ".webp",
-}
-
-var RarityDistribution = map[string]float64{
-	"Legendary": 0.01,
-	"Epic":      0.03,
-	"Rare":      0.06,
-	"Uncommon":  0.20,
-	"Common":    0.80,
 }
 
 var RarityTypes = map[string]Rarity{
@@ -123,6 +115,7 @@ func NewBootyCommand(e *event.EventManager, store *storage.Storage) *BootyComman
 
 func (bc *BootyCommand) Run(s *discordgo.Session, m *discordgo.MessageCreate) error {
 
+	s.
 	// Upload the file to Discord
 	randFile, err := bc.getRandomFile()
 	if err != nil {
@@ -163,35 +156,38 @@ func (bc *BootyCommand) Run(s *discordgo.Session, m *discordgo.MessageCreate) er
 }
 
 // CalculateRarity determines the rarity level of an image based on its popularity.
-func (bc *BootyCommand) calculateRarity(currentDistribution map[string]int, totalImages int, fileName string) Rarity {
+func (bc *BootyCommand) calculateWeight(fileName string) weightedrand.Choice {
 
+	filePath := fmt.Sprintf("%s/%s", bc.BootyFolder, fileName)
 	h := md5.New()
-	h.Write([]byte(fileName))
+	h.Write([]byte(filePath))
 	hash := hex.EncodeToString(h.Sum(nil))
 
 	image, err := bc.Store.GetBootyImage(hash)
 	if err != nil {
-		return bc.RarityTypes["common"]
+		return weightedrand.NewChoice(Image{FileName: fileName, Rarity: RarityTypes["common"]}, 1)
 	}
 	if image.PostCount == 0 {
-		return bc.RarityTypes["common"]
+		return weightedrand.NewChoice(Image{FileName: fileName, Rarity: RarityTypes["common"]}, 1)
 	}
 
-	ratio := float64(image.Likes) / float64(image.Dislikes+1)
-	score := ratio / float64(image.PostCount)
+	rarity := RarityTypes["common"]
+	weight := uint((float64(image.Likes)-float64(image.Dislikes))/float64(image.PostCount)) + 1
 
 	switch {
-	case score >= 0.99:
-		return bc.RarityTypes["legendary"]
-	case score >= 0.97:
-		return bc.RarityTypes["epic"]
-	case score >= 0.94:
-		return bc.RarityTypes["rare"]
-	case score >= 0.80:
-		return bc.RarityTypes["uncommon"]
+	case weight > 2 && weight <= 4:
+		rarity = RarityTypes["uncommon"]
+	case weight > 4 && weight <= 6:
+		rarity = RarityTypes["rare"]
+	case weight > 6 && weight <= 8:
+		rarity = RarityTypes["epic"]
+	case weight > 8:
+		rarity = RarityTypes["legendary"]
 	default:
-		return bc.RarityTypes["common"]
+		rarity = RarityTypes["common"]
 	}
+
+	return weightedrand.NewChoice(&Image{FileName: fileName, Rarity: rarity}, weight)
 }
 
 func handleReaction(msg *event.MessageReactionInteraction, s *storage.Storage, removed bool) {
@@ -242,7 +238,7 @@ func (bc *BootyCommand) createEmbed(f *os.File, rarity Rarity) (*discordgo.Messa
 	hash := fmt.Sprintf("%s%s", hex.EncodeToString(h.Sum(nil)), mimeType.Ext)
 
 	embed := &discordgo.MessageEmbed{
-		Title:       fmt.Sprintf("Rarity: %s", rarity.Name),
+		Title:       rarity.Name,
 		Description: "Click image to enlarge.",
 		Author:      &discordgo.MessageEmbedAuthor{},
 		Color:       rarity.Value,
@@ -291,16 +287,7 @@ func (bc *BootyCommand) getRandomFile() (*Image, error) {
 		return nil, err
 	}
 
-	totalImages := len(bootyFiles)
-	currentDistribution := map[string]int{
-		"Legendary": 0,
-		"Epic":      0,
-		"Rare":      0,
-		"Uncommon":  0,
-		"Common":    0,
-	}
-
-	var fileList []Image
+	var fileList []weightedrand.Choice
 	for _, file := range bootyFiles {
 		if !file.IsDir() {
 
@@ -314,12 +301,18 @@ func (bc *BootyCommand) getRandomFile() (*Image, error) {
 				continue
 			}
 
-			rarity := bc.calculateRarity(currentDistribution, totalImages, filepath)
-			fileList = append(fileList, Image{FileName: file.Name(), Rarity: rarity})
+			choice := bc.calculateWeight(file.Name())
+			fileList = append(fileList, choice)
 		}
 	}
 
-	return &fileList[rand.Intn(len(fileList))], nil
+	chooser, err := weightedrand.NewChooser(fileList...)
+	if err != nil {
+		log.Printf("could not choose image: %v", chooser)
+		return nil, err
+	}
+	pick := chooser.Pick().(*Image)
+	return pick, nil
 }
 
 func (bc *BootyCommand) addReaction(s *discordgo.Session, channelID, messageID string) error {
